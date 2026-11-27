@@ -4,8 +4,10 @@ Um plugin para **Notepad++** que permite filtrar e remover rapidamente linhas do
 
 ## 🚀 Funcionalidades
 
-- **Remover linhas que CONTÊM a seleção**: Remove todas as linhas do documento que possuem o termo selecionado.
-- **Remover linhas que NÃO CONTÊM a seleção**: Mantém apenas as linhas que contêm o termo selecionado (excluindo as demais).
+- **Remover linhas que CONTÊM a seleção** (`Ctrl + Alt + R`): Remove todas as linhas do documento que possuem o termo selecionado.
+- **Remover linhas que NÃO CONTÊM a seleção** (`Ctrl + Alt + Shift + R`): Mantém apenas as linhas que contêm o termo selecionado (excluindo as demais).
+- **Atalhos customizáveis**: Todos os atalhos podem ser alterados em **Configurações > Mapeador de atalhos... > Comandos de plug-in**.
+- **Menu de contexto (botão direito)**: Suporte a inclusão no menu de contexto do editor via `contextMenu.xml`.
 - **Case Sensitive**: Opção no menu para ativar ou desativar diferenciação entre maiúsculas e minúsculas (preferência persistida em `%APPDATA%\NppRemoveLines\NppRemoveLines.ini`).
 - **Suporte Seguro a Unicode / UTF-8**: Comparação sem distorcer caracteres acentuados ou multibyte.
 - **Histórico de Undo Íntegro**: Ação de remoção agrupada em uma única operação de desfecho (`Ctrl+Z`), preservando o cursor e a visualização do documento.

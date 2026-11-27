@@ -21,6 +21,10 @@
 bool g_caseSensitive = false;
 TCHAR iniFilePath[MAX_PATH] = {0};
 
+// Atalhos padrão de teclado
+ShortcutKey* g_skRemoveLines = nullptr;
+ShortcutKey* g_skRemoveLinesNot = nullptr;
+
 // Dados do Notepad++
 FuncItem funcItem[nbFunc];
 NppData nppData;
@@ -73,8 +77,21 @@ void pluginInit(HANDLE /*hModule*/) {
     initConfigPath();
     loadConfig();
 
-    setCommand(FUNC_REMOVE_LINES, TEXT("Remover linhas que CONTÊM a seleção"), removeLinesWithSelection, nullptr, false);
-    setCommand(FUNC_REMOVE_LINES_NOT, TEXT("Remover linhas que NÃO CONTÊM a seleção"), removeLinesWithoutSelection, nullptr, false);
+    // Atalhos de teclado padrão (customizáveis pelo Shortcut Mapper do Notepad++)
+    g_skRemoveLines = new ShortcutKey();
+    g_skRemoveLines->_isCtrl = true;
+    g_skRemoveLines->_isAlt = true;
+    g_skRemoveLines->_isShift = false;
+    g_skRemoveLines->_key = 'R'; // Ctrl + Alt + R
+
+    g_skRemoveLinesNot = new ShortcutKey();
+    g_skRemoveLinesNot->_isCtrl = true;
+    g_skRemoveLinesNot->_isAlt = true;
+    g_skRemoveLinesNot->_isShift = true;
+    g_skRemoveLinesNot->_key = 'R'; // Ctrl + Alt + Shift + R
+
+    setCommand(FUNC_REMOVE_LINES, TEXT("Remover linhas que CONTÊM a seleção"), removeLinesWithSelection, g_skRemoveLines, false);
+    setCommand(FUNC_REMOVE_LINES_NOT, TEXT("Remover linhas que NÃO CONTÊM a seleção"), removeLinesWithoutSelection, g_skRemoveLinesNot, false);
     setCommand(FUNC_TOGGLE_CASE_SENSITIVITY, TEXT("Case Sensitive"), toggleCaseSensitive, nullptr, false);
 }
 
@@ -85,6 +102,14 @@ void commandMenuInit() {
 }
 
 void commandMenuCleanUp() {
+    if (g_skRemoveLines) {
+        delete g_skRemoveLines;
+        g_skRemoveLines = nullptr;
+    }
+    if (g_skRemoveLinesNot) {
+        delete g_skRemoveLinesNot;
+        g_skRemoveLinesNot = nullptr;
+    }
 }
 
 bool setCommand(size_t index, TCHAR *cmdName, PFUNCPLUGINCMD pFunc, ShortcutKey *sk, bool checkOnInit) {
