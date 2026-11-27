@@ -207,6 +207,13 @@ static void filterLines(bool keepMatching) {
         return;
     }
 
+    // Posição do cursor e linha original antes de modificar o texto
+    int currentPos = static_cast<int>(::SendMessage(curScintilla, SCI_GETCURRENTPOS, 0, 0));
+    int originalCursorLine = static_cast<int>(::SendMessage(curScintilla, SCI_LINEFROMPOSITION, currentPos, 0));
+    int originalLineStart = static_cast<int>(::SendMessage(curScintilla, SCI_POSITIONFROMLINE, originalCursorLine, 0));
+    int colInLine = currentPos - originalLineStart;
+    if (colInLine < 0) colInLine = 0;
+
     // 2. Identificar a página de código (CodePage) e modo de quebra de linha (EOL) do buffer ativo
     UINT codePage = static_cast<UINT>(::SendMessage(curScintilla, SCI_GETCODEPAGE, 0, 0));
     if (codePage == 0) {
@@ -235,6 +242,10 @@ static void filterLines(bool keepMatching) {
     }
 
     std::vector<char> lineBuffer;
+    int targetNewLine = -1;
+    int keptLinesCount = 0;
+    bool originalLineWasKept = false;
+    int lastKeptLineBeforeCursor = -1;
 
     for (int i = 0; i < numLines; ++i) {
         int lineLength = static_cast<int>(::SendMessage(curScintilla, SCI_LINELENGTH, i, 0));
@@ -259,25 +270,52 @@ static void filterLines(bool keepMatching) {
 
         bool keep = keepMatching ? matched : !matched;
         if (keep) {
+            if (i == originalCursorLine) {
+                originalLineWasKept = true;
+                targetNewLine = keptLinesCount;
+            } else if (i < originalCursorLine) {
+                lastKeptLineBeforeCursor = keptLinesCount;
+            } else if (i > originalCursorLine && targetNewLine == -1) {
+                // Primeira linha mantida abaixo da linha original que foi removida
+                targetNewLine = keptLinesCount;
+            }
+
             result.append(line);
             result.append(eolStr);
+            keptLinesCount++;
         }
     }
 
-    // 4. Aplicar o novo texto encapsulado em bloco de Undo e restaurar posição de visualização
-    ::SendMessage(curScintilla, SCI_BEGINUNDOACTION, 0, 0);
+    // Se a linha onde estava o cursor foi removida e não há linhas mantidas abaixo, posiciona na linha acima
+    if (!originalLineWasKept && targetNewLine == -1) {
+        targetNewLine = lastKeptLineBeforeCursor;
+    }
 
-    int firstVisibleLine = static_cast<int>(::SendMessage(curScintilla, SCI_GETFIRSTVISIBLELINE, 0, 0));
-    int currentPos = static_cast<int>(::SendMessage(curScintilla, SCI_GETCURRENTPOS, 0, 0));
+    // 4. Aplicar o novo texto encapsulado em bloco de Undo e restaurar posição do cursor
+    ::SendMessage(curScintilla, SCI_BEGINUNDOACTION, 0, 0);
 
     ::SendMessage(curScintilla, SCI_SETTEXT, 0, reinterpret_cast<LPARAM>(result.c_str()));
 
-    int newDocLength = static_cast<int>(::SendMessage(curScintilla, SCI_GETLENGTH, 0, 0));
-    int restoredPos = (currentPos < newDocLength) ? currentPos : newDocLength;
-    ::SendMessage(curScintilla, SCI_SETCURRENTPOS, restoredPos, 0);
-    ::SendMessage(curScintilla, SCI_SETSELECTIONSTART, restoredPos, 0);
-    ::SendMessage(curScintilla, SCI_SETSELECTIONEND, restoredPos, 0);
-    ::SendMessage(curScintilla, SCI_SETFIRSTVISIBLELINE, firstVisibleLine, 0);
+    if (keptLinesCount > 0 && targetNewLine >= 0) {
+        if (targetNewLine >= keptLinesCount) {
+            targetNewLine = keptLinesCount - 1;
+        }
+
+        int newLineStart = static_cast<int>(::SendMessage(curScintilla, SCI_POSITIONFROMLINE, targetNewLine, 0));
+        int newLineLen = static_cast<int>(::SendMessage(curScintilla, SCI_LINELENGTH, targetNewLine, 0));
+        int maxCol = newLineLen;
+        if (maxCol > 0 && !eolStr.empty()) {
+            maxCol = (maxCol >= static_cast<int>(eolStr.length())) ? maxCol - static_cast<int>(eolStr.length()) : 0;
+        }
+        int targetCol = (colInLine < maxCol) ? colInLine : maxCol;
+        int finalPos = newLineStart + targetCol;
+
+        ::SendMessage(curScintilla, SCI_SETEMPTYSELECTION, finalPos, 0);
+        ::SendMessage(curScintilla, SCI_ENSUREVISIBLE, targetNewLine, 0);
+        ::SendMessage(curScintilla, SCI_SCROLLCARET, 0, 0);
+    } else {
+        ::SendMessage(curScintilla, SCI_SETEMPTYSELECTION, 0, 0);
+    }
 
     ::SendMessage(curScintilla, SCI_ENDUNDOACTION, 0, 0);
 }
