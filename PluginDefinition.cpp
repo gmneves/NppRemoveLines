@@ -167,21 +167,20 @@ static void filterLines(bool keepMatching) {
     HWND curScintilla = (which == 0) ? nppData._scintillaMainHandle : nppData._scintillaSecondHandle;
     if (!curScintilla) return;
 
-    // 1. Obter a seleção ativa (sem restrição artificial de tamanho)
+    // 1. Obter a seleção ativa
     int selStart = static_cast<int>(::SendMessage(curScintilla, SCI_GETSELECTIONSTART, 0, 0));
     int selEnd = static_cast<int>(::SendMessage(curScintilla, SCI_GETSELECTIONEND, 0, 0));
-    if (selStart == selEnd) {
+    int selLen = selEnd - selStart;
+    if (selLen <= 0) {
         return; // Nenhuma seleção realizada
     }
 
-    int selBytesWithNull = static_cast<int>(::SendMessage(curScintilla, SCI_GETSELTEXT, 0, 0));
-    if (selBytesWithNull <= 1) {
-        return;
-    }
-
-    std::vector<char> selBuffer(selBytesWithNull);
+    std::vector<char> selBuffer(selLen + 1, 0);
     ::SendMessage(curScintilla, SCI_GETSELTEXT, 0, reinterpret_cast<LPARAM>(selBuffer.data()));
     std::string keyword(selBuffer.data());
+    if (keyword.empty()) {
+        return;
+    }
 
     // 2. Identificar a página de código (CodePage) e modo de quebra de linha (EOL) do buffer ativo
     UINT codePage = static_cast<UINT>(::SendMessage(curScintilla, SCI_GETCODEPAGE, 0, 0));
