@@ -1,0 +1,14 @@
+# Binaries and build outputs
+*.dll
+*.def
+*.o
+*.obj
+*.exe
+
+# Configuration and runtime files
+*.ini
+
+# IDE / Editor folders
+.vscode/
+.vs/
+.idea/
