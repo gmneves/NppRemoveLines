@@ -1,20 +1,3 @@
-//this file is part of notepad++
-//Copyright (C)2022 Don HO <don.h@free.fr>
-//
-//This program is free software; you can redistribute it and/or
-//modify it under the terms of the GNU General Public License
-//as published by the Free Software Foundation; either
-//version 2 of the License, or (at your option) any later version.
-//
-//This program is distributed in the hope that it will be useful,
-//but WITHOUT ANY WARRANTY; without even the implied warranty of
-//MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-//GNU General Public License for more details.
-//
-//You should have received a copy of the GNU General Public License
-//along with this program; if not, write to the Free Software
-//Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
-
 #ifndef UNICODE
 #define UNICODE
 #endif
@@ -24,22 +7,27 @@
 
 #include "PluginDefinition.h"
 #include "menuCmdID.h"
-#include "wchar.h"
 #include <windows.h>
-#include <shlwapi.h> // Para PathRemoveFileSpec
+#include <shlwapi.h>
+#include <shlobj.h>
 #include <string>
-#include <shlobj.h>  // Para SHGetFolderPath
-#include <filesystem> // C++17 para criar pasta
-#include <fstream>  // para std::ofstream
+#include <vector>
+#include <algorithm>
+#include <cwctype>
+#include <filesystem>
+#include <fstream>
 
-
-bool g_caseSensitive = true;
-void removeLinesWithSelection();
-void removeLinesWithoutSelection();
-void toggleCaseSensitive();
-
+// Estado global de sensibilidade a maiúsculas/minúsculas
+bool g_caseSensitive = false;
 TCHAR iniFilePath[MAX_PATH] = {0};
 
+// Dados do Notepad++
+FuncItem funcItem[nbFunc];
+NppData nppData;
+
+//
+// Configuração (INI)
+//
 void initConfigPath() {
     TCHAR appDataPath[MAX_PATH] = {0};
     if (SUCCEEDED(SHGetFolderPath(NULL, CSIDL_APPDATA, NULL, SHGFP_TYPE_CURRENT, appDataPath))) {
@@ -48,34 +36,23 @@ void initConfigPath() {
         std::error_code ec;
         std::filesystem::create_directories(dir, ec);
         if (ec) {
-            OutputDebugStringW((L"Erro ao criar diretório: " + std::wstring(ec.message().begin(), ec.message().end()) + L"\n").c_str());
+            OutputDebugStringW((L"Erro ao criar diretorio: " + std::wstring(ec.message().begin(), ec.message().end()) + L"\n").c_str());
         }
 
         wcscpy_s(iniFilePath, dir.c_str());
         wcscat_s(iniFilePath, L"\\NppRemoveLines.ini");
 
-        OutputDebugStringW((L"INI path: " + std::wstring(iniFilePath) + L"\n").c_str());
-
         std::ifstream iniCheck(iniFilePath);
         if (!iniCheck.good()) {
             iniCheck.close();
-
-            // Cria arquivo e escreve conteúdo default
             std::ofstream createIni(iniFilePath);
             if (createIni) {
                 createIni << "[Settings]\nCaseSensitive=0\n";
                 createIni.close();
-                OutputDebugStringW(L"Arquivo INI criado com conteúdo padrão.\n");
-            }
-            else {
-                OutputDebugStringW(L"Falha ao criar arquivo INI.\n");
             }
         } else {
             iniCheck.close();
         }
-    }
-    else {
-        OutputDebugStringW(L"Falha ao obter o caminho %APPDATA%\n");
     }
 }
 
@@ -90,111 +67,31 @@ void loadConfig() {
 }
 
 //
-// The plugin data that Notepad++ needs
+// Inicialização do Plugin
 //
-FuncItem funcItem[nbFunc];
-
-//
-// The data of Notepad++ that you can use in your plugin commands
-//
-NppData nppData;
-
-//
-// Initialize your plugin data here
-// It will be called while plugin loading   
 void pluginInit(HANDLE /*hModule*/) {
-	initConfigPath();
+    initConfigPath();
     loadConfig();
+
     setCommand(FUNC_REMOVE_LINES, TEXT("Remover linhas que CONTÊM a seleção"), removeLinesWithSelection, nullptr, false);
-	setCommand(FUNC_REMOVE_LINES_NOT, TEXT("Remover linhas que NÃO CONTÊM a seleção"), removeLinesWithoutSelection, nullptr, false);
-	setCommand(FUNC_TOGGLE_CASE_SENSITIVITY, TEXT("Case Sensitive"), toggleCaseSensitive, nullptr, false);
-	//::SendMessage(nppData._nppHandle, NPPM_SETMENUITEMCHECK, funcItem[FUNC_TOGGLE_CASE_SENSITIVITY]._cmdID, g_caseSensitive);
+    setCommand(FUNC_REMOVE_LINES_NOT, TEXT("Remover linhas que NÃO CONTÊM a seleção"), removeLinesWithoutSelection, nullptr, false);
+    setCommand(FUNC_TOGGLE_CASE_SENSITIVITY, TEXT("Case Sensitive"), toggleCaseSensitive, nullptr, false);
 }
 
-void toggleCaseSensitive() {
-    // Atualiza o estado do menu com check
-    g_caseSensitive = !g_caseSensitive;
-	::SendMessage(nppData._nppHandle, NPPM_SETMENUITEMCHECK, funcItem[FUNC_TOGGLE_CASE_SENSITIVITY]._cmdID, g_caseSensitive);
-    saveConfig(); // ← salva no .ini sempre que mudar
+void pluginCleanUp() {
 }
 
-
-extern "C" __declspec(dllexport) void beNotified(SCNotification *notifyCode)
-{
-	switch (notifyCode->nmhdr.code) 
-	{
-		case NPPN_SHUTDOWN:
-		{
-			commandMenuCleanUp();
-		}
-		break;
-
-		case NPPN_READY:
-		{
-			// Aqui é seguro alterar o estado visual do menu
-			::SendMessage(nppData._nppHandle, NPPM_SETMENUITEMCHECK,
-			              funcItem[FUNC_TOGGLE_CASE_SENSITIVITY]._cmdID,
-			              g_caseSensitive);
-		}
-		break;
-
-		default:
-			return;
-	}
+void commandMenuInit() {
 }
 
-
-
-//
-// Here you can do the clean up, save the parameters (if any) for the next session
-//
-void pluginCleanUp()
-{
+void commandMenuCleanUp() {
 }
 
-//
-// Initialization of your plugin commands
-// You should fill your plugins commands here
-void commandMenuInit()
-{
-
-    //--------------------------------------------//
-    //-- STEP 3. CUSTOMIZE YOUR PLUGIN COMMANDS --//
-    //--------------------------------------------//
-    // with function :
-    // setCommand(int index,                      // zero based number to indicate the order of command
-    //            TCHAR *commandName,             // the command name that you want to see in plugin menu
-    //            PFUNCPLUGINCMD functionPointer, // the symbol of function (function pointer) associated with this command. The body should be defined below. See Step 4.
-    //            ShortcutKey *shortcut,          // optional. Define a shortcut to trigger this command
-    //            bool check0nInit                // optional. Make this menu item be checked visually
-    //            );
-//	wcscpy(funcItem[0]._itemName, L"Remover linhas com selecao");
-//	funcItem[0]._pFunc = removeLinesWithSelection;
-//	wcscpy(funcItem[1]._itemName, L"Remover linhas sem selecao");
-//	funcItem[1]._pFunc = removeLinesWithoutSelection;
-}
-
-//
-// Here you can do the clean up (especially for the shortcut)
-//
-void commandMenuCleanUp()
-{
-	// Don't forget to deallocate your shortcut here
-}
-
-
-//
-// This function help you to initialize your plugin commands
-//
-bool setCommand(size_t index, TCHAR *cmdName, PFUNCPLUGINCMD pFunc, ShortcutKey *sk, bool checkOnInit) 
-{
-    if (index >= nbFunc)
+bool setCommand(size_t index, TCHAR *cmdName, PFUNCPLUGINCMD pFunc, ShortcutKey *sk, bool checkOnInit) {
+    if (index >= nbFunc || !pFunc)
         return false;
 
-    if (!pFunc)
-        return false;
-
-    wcscpy(funcItem[index]._itemName, cmdName);
+    wcscpy_s(funcItem[index]._itemName, cmdName);
     funcItem[index]._pFunc = pFunc;
     funcItem[index]._init2Check = checkOnInit;
     funcItem[index]._pShKey = sk;
@@ -202,113 +99,171 @@ bool setCommand(size_t index, TCHAR *cmdName, PFUNCPLUGINCMD pFunc, ShortcutKey 
     return true;
 }
 
-//----------------------------------------------//
-//-- STEP 4. DEFINE YOUR ASSOCIATED FUNCTIONS --//
-//----------------------------------------------//
+void toggleCaseSensitive() {
+    g_caseSensitive = !g_caseSensitive;
+    ::SendMessage(nppData._nppHandle, NPPM_SETMENUITEMCHECK, funcItem[FUNC_TOGGLE_CASE_SENSITIVITY]._cmdID, g_caseSensitive);
+    saveConfig();
+}
 
-#include <sstream>
-#include <string>
-#include <algorithm>
+extern "C" __declspec(dllexport) void beNotified(SCNotification *notifyCode) {
+    switch (notifyCode->nmhdr.code) {
+        case NPPN_SHUTDOWN: {
+            commandMenuCleanUp();
+            break;
+        }
+        case NPPN_READY: {
+            ::SendMessage(nppData._nppHandle, NPPM_SETMENUITEMCHECK,
+                          funcItem[FUNC_TOGGLE_CASE_SENSITIVITY]._cmdID,
+                          g_caseSensitive);
+            break;
+        }
+        default:
+            break;
+    }
+}
 
-void removeLinesWithSelection() {
-    HWND curScintilla;
+//
+// Utilitários de String e Unicode
+//
+static std::wstring toWString(const char* str, size_t len, UINT codePage) {
+    if (!str || len == 0)
+        return std::wstring();
+
+    int sizeNeeded = MultiByteToWideChar(codePage, 0, str, static_cast<int>(len), nullptr, 0);
+    if (sizeNeeded <= 0)
+        return std::wstring();
+
+    std::wstring wstr(sizeNeeded, L'\0');
+    MultiByteToWideChar(codePage, 0, str, static_cast<int>(len), &wstr[0], sizeNeeded);
+    return wstr;
+}
+
+static bool containsSubstr(const std::wstring& text, const std::wstring& pattern, bool caseSensitive) {
+    if (pattern.empty())
+        return true;
+    if (pattern.size() > text.size())
+        return false;
+
+    if (caseSensitive) {
+        return text.find(pattern) != std::wstring::npos;
+    }
+
+    auto it = std::search(
+        text.begin(), text.end(),
+        pattern.begin(), pattern.end(),
+        [](wchar_t c1, wchar_t c2) {
+            return towlower(c1) == towlower(c2);
+        }
+    );
+    return it != text.end();
+}
+
+//
+// Lógica Principal de Filtragem de Linhas
+//
+static void filterLines(bool keepMatching) {
     int which = -1;
-    ::SendMessage(nppData._nppHandle, NPPM_GETCURRENTSCINTILLA, 0, (LPARAM)&which);
-    curScintilla = (which == 0) ? nppData._scintillaMainHandle : nppData._scintillaSecondHandle;
+    ::SendMessage(nppData._nppHandle, NPPM_GETCURRENTSCINTILLA, 0, reinterpret_cast<LPARAM>(&which));
+    HWND curScintilla = (which == 0) ? nppData._scintillaMainHandle : nppData._scintillaSecondHandle;
+    if (!curScintilla) return;
 
-    int selStart = ::SendMessage(curScintilla, SCI_GETSELECTIONSTART, 0, 0);
-    int selEnd = ::SendMessage(curScintilla, SCI_GETSELECTIONEND, 0, 0);
-    int selLen = selEnd - selStart;
+    // 1. Obter a seleção ativa (sem restrição artificial de tamanho)
+    int selStart = static_cast<int>(::SendMessage(curScintilla, SCI_GETSELECTIONSTART, 0, 0));
+    int selEnd = static_cast<int>(::SendMessage(curScintilla, SCI_GETSELECTIONEND, 0, 0));
+    if (selStart == selEnd) {
+        return; // Nenhuma seleção realizada
+    }
 
-    if (selLen <= 0 || selLen >= 256) return;
+    int selBytesWithNull = static_cast<int>(::SendMessage(curScintilla, SCI_GETSELTEXT, 0, 0));
+    if (selBytesWithNull <= 1) {
+        return;
+    }
 
-    char selected[256] = {0};
-    ::SendMessage(curScintilla, SCI_GETSELTEXT, 0, (LPARAM)selected);
-    std::string keyword = selected;
+    std::vector<char> selBuffer(selBytesWithNull);
+    ::SendMessage(curScintilla, SCI_GETSELTEXT, 0, reinterpret_cast<LPARAM>(selBuffer.data()));
+    std::string keyword(selBuffer.data());
 
-    int numLines = ::SendMessage(curScintilla, SCI_GETLINECOUNT, 0, 0);
+    // 2. Identificar a página de código (CodePage) e modo de quebra de linha (EOL) do buffer ativo
+    UINT codePage = static_cast<UINT>(::SendMessage(curScintilla, SCI_GETCODEPAGE, 0, 0));
+    if (codePage == 0) {
+        codePage = CP_ACP; // ANSI fallback se não for UTF-8 (65001)
+    }
+
+    int eolMode = static_cast<int>(::SendMessage(curScintilla, SCI_GETEOLMODE, 0, 0));
+    std::string eolStr;
+    switch (eolMode) {
+        case SC_EOL_CR:   eolStr = "\r"; break;
+        case SC_EOL_LF:   eolStr = "\n"; break;
+        case SC_EOL_CRLF:
+        default:          eolStr = "\r\n"; break;
+    }
+
+    std::wstring patternW = toWString(keyword.data(), keyword.size(), codePage);
+
+    // 3. Processar linhas de forma otimizada com buffer reutilizável
+    int numLines = static_cast<int>(::SendMessage(curScintilla, SCI_GETLINECOUNT, 0, 0));
+    if (numLines <= 0) return;
+
+    int docLength = static_cast<int>(::SendMessage(curScintilla, SCI_GETLENGTH, 0, 0));
     std::string result;
+    if (docLength > 0) {
+        result.reserve(static_cast<size_t>(docLength));
+    }
+
+    std::vector<char> lineBuffer;
 
     for (int i = 0; i < numLines; ++i) {
-        int lineLength = ::SendMessage(curScintilla, SCI_LINELENGTH, i, 0);
+        int lineLength = static_cast<int>(::SendMessage(curScintilla, SCI_LINELENGTH, i, 0));
         if (lineLength <= 0) continue;
 
-        char* buffer = new char[lineLength + 1];
-        memset(buffer, 0, lineLength + 1);
+        if (static_cast<int>(lineBuffer.size()) < lineLength + 1) {
+            lineBuffer.resize(lineLength + 1);
+        }
 
-        ::SendMessage(curScintilla, SCI_GETLINE, i, (LPARAM)buffer);
-        std::string line(buffer);
-        delete[] buffer;
+        ::SendMessage(curScintilla, SCI_GETLINE, i, reinterpret_cast<LPARAM>(lineBuffer.data()));
+        lineBuffer[lineLength] = '\0';
 
-        // Remove \r and \n
-        line.erase(std::remove(line.begin(), line.end(), '\r'), line.end());
-        line.erase(std::remove(line.begin(), line.end(), '\n'), line.end());
+        std::string line(lineBuffer.data(), lineLength);
 
-		if (g_caseSensitive) {
-			if (line.find(keyword) == std::string::npos)
-				result += line + "\r\n";
-		} else {
-			std::string lowerLine = line;
-			std::string lowerKeyword = keyword;
+        // Remover terminadores de linha para a comparação
+        while (!line.empty() && (line.back() == '\r' || line.back() == '\n')) {
+            line.pop_back();
+        }
 
-			std::transform(lowerLine.begin(), lowerLine.end(), lowerLine.begin(), ::tolower);
-			std::transform(lowerKeyword.begin(), lowerKeyword.end(), lowerKeyword.begin(), ::tolower);
+        std::wstring lineW = toWString(line.data(), line.size(), codePage);
+        bool matched = containsSubstr(lineW, patternW, g_caseSensitive);
 
-			if (lowerLine.find(lowerKeyword) == std::string::npos)
-				result += line + "\r\n";
-		}
+        bool keep = keepMatching ? matched : !matched;
+        if (keep) {
+            result.append(line);
+            result.append(eolStr);
+        }
     }
-    ::SendMessage(curScintilla, SCI_SETTEXT, 0, (LPARAM)result.c_str());
+
+    // 4. Aplicar o novo texto encapsulado em bloco de Undo e restaurar posição de visualização
+    ::SendMessage(curScintilla, SCI_BEGINUNDOACTION, 0, 0);
+
+    int firstVisibleLine = static_cast<int>(::SendMessage(curScintilla, SCI_GETFIRSTVISIBLELINE, 0, 0));
+    int currentPos = static_cast<int>(::SendMessage(curScintilla, SCI_GETCURRENTPOS, 0, 0));
+
+    ::SendMessage(curScintilla, SCI_SETTEXT, 0, reinterpret_cast<LPARAM>(result.c_str()));
+
+    int newDocLength = static_cast<int>(::SendMessage(curScintilla, SCI_GETLENGTH, 0, 0));
+    int restoredPos = (currentPos < newDocLength) ? currentPos : newDocLength;
+    ::SendMessage(curScintilla, SCI_SETCURRENTPOS, restoredPos, 0);
+    ::SendMessage(curScintilla, SCI_SETSELECTIONSTART, restoredPos, 0);
+    ::SendMessage(curScintilla, SCI_SETSELECTIONEND, restoredPos, 0);
+    ::SendMessage(curScintilla, SCI_SETFIRSTVISIBLELINE, firstVisibleLine, 0);
+
+    ::SendMessage(curScintilla, SCI_ENDUNDOACTION, 0, 0);
+}
+
+void removeLinesWithSelection() {
+    // Remove linhas que contêm a seleção -> mantém as que NÃO casam
+    filterLines(false);
 }
 
 void removeLinesWithoutSelection() {
-    HWND curScintilla;
-    int which = -1;
-    ::SendMessage(nppData._nppHandle, NPPM_GETCURRENTSCINTILLA, 0, (LPARAM)&which);
-    curScintilla = (which == 0) ? nppData._scintillaMainHandle : nppData._scintillaSecondHandle;
-
-    int selStart = ::SendMessage(curScintilla, SCI_GETSELECTIONSTART, 0, 0);
-    int selEnd = ::SendMessage(curScintilla, SCI_GETSELECTIONEND, 0, 0);
-    int selLen = selEnd - selStart;
-
-    if (selLen <= 0 || selLen >= 256) return;
-
-    char selected[256] = {0};
-    ::SendMessage(curScintilla, SCI_GETSELTEXT, 0, (LPARAM)selected);
-    std::string keyword = selected;
-
-    int numLines = ::SendMessage(curScintilla, SCI_GETLINECOUNT, 0, 0);
-    std::string result;
-
-    for (int i = 0; i < numLines; ++i) {
-        int lineLength = ::SendMessage(curScintilla, SCI_LINELENGTH, i, 0);
-        if (lineLength <= 0) continue;
-
-        char* buffer = new char[lineLength + 1];
-        memset(buffer, 0, lineLength + 1);
-        ::SendMessage(curScintilla, SCI_GETLINE, i, (LPARAM)buffer);
-
-        std::string line(buffer);
-        delete[] buffer;
-
-        // Remove \r and \n
-        line.erase(std::remove(line.begin(), line.end(), '\r'), line.end());
-        line.erase(std::remove(line.begin(), line.end(), '\n'), line.end());
-
-        bool contains = false;
-        if (g_caseSensitive) {
-            contains = (line.find(keyword) != std::string::npos);
-        } else {
-            std::string lowerLine = line;
-            std::string lowerKeyword = keyword;
-            std::transform(lowerLine.begin(), lowerLine.end(), lowerLine.begin(), ::tolower);
-            std::transform(lowerKeyword.begin(), lowerKeyword.end(), lowerKeyword.begin(), ::tolower);
-            contains = (lowerLine.find(lowerKeyword) != std::string::npos);
-        }
-
-        if (contains)
-            result += line + "\r\n";
-    }
-
-    ::SendMessage(curScintilla, SCI_SETTEXT, 0, (LPARAM)result.c_str());
+    // Remove linhas que NÃO contêm a seleção -> mantém as que casam
+    filterLines(true);
 }

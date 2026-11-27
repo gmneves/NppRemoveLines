@@ -1,0 +1,50 @@
+name: Build NppRemoveLines
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    strategy:
+      matrix:
+        arch: [x64, x86]
+        include:
+          - arch: x64
+            msystem: MINGW64
+            pkg: mingw-w64-x86_64
+          - arch: x86
+            msystem: MINGW32
+            pkg: mingw-w64-i686
+
+    defaults:
+      run:
+        shell: msys2 {0}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup MSYS2
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: ${{ matrix.msystem }}
+          update: true
+          install: >-
+            ${{ matrix.pkg }}-gcc
+            make
+
+      - name: Build plugin
+        run: |
+          make clean
+          make
+
+      - name: Upload DLL Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: NppRemoveLines-${{ matrix.arch }}
+          path: NppRemoveLines.dll
